@@ -72,6 +72,7 @@ def users_index():
 # create user
 @app.route('/bookmarking/<user_id>', methods=['POST'])
 def users_create(user_id):
+    # TODO: cross out the user_id
     if request.method == 'POST':
         try:
             # If more than two attr
@@ -130,16 +131,16 @@ def users_delete(user_id):
 @app.route('/bookmarking/bookmarks', methods=['GET'])
 def bookmarks_index():
     data_key = {}
-    accepted_key = ['tag', 'count', 'offset']
+    accepted_key = ['tags', 'count', 'offset']
 
-    # TODO: Check if the tag more than one tag -> split(',')
-    tag = request.args.get('tag')
+    # TODO: check to see if the offset can be started from 1
+    tags = request.args.get('tags')
     count = request.args.get('count')
     offset = request.args.get('offset')
 
     try:
-        for x in list(request.args):
-            if x not in accepted_key:
+        for temp_key in list(request.args):
+            if temp_key not in accepted_key:
                 raise MalfunctionException
     except MalfunctionException as err:
         # return response({'status': bad_request_code}, bad_request_code)
@@ -153,21 +154,20 @@ def bookmarks_index():
 
     tuple_value = ()
 
-    # TODO: do a foreach for the multiple tags, using WHERE AND LIKE
-    if tag:
-        tags = str(tag).split(",")
-        if tags > 1:
+    if tags:
+        tags = str(tags).split(",")
+        if len(tags) > 1:
             first = True
-            for x in tags:
+            for temp_tag in tags:
                 if first:
-                    tuple_value = tuple_value + ("%" + str(x) + "%",)
-                    sql = sql + "WHERE tags LIKE ?"
+                    tuple_value = tuple_value + ("%" + str(temp_tag) + "%",)
+                    sql = sql + " WHERE tags LIKE ?"
                     first = False
                 else:
-                    tuple_value = tuple_value + ("%" + str(x) + "%",)
-                    sql = sql + "AND tags LIKE ?"
+                    tuple_value = tuple_value + ("%" + str(temp_tag) + "%",)
+                    sql = sql + " AND tags LIKE ?"
         else:
-            tuple_value = tuple_value + ("%" + str(tag) + "%",)
+            tuple_value = tuple_value + ("%" + str(tags[0]) + "%",)
             sql = sql + " WHERE tags LIKE ?"
 
     sql = sql + " ORDER BY url ASC, user_id ASC"
@@ -179,6 +179,8 @@ def bookmarks_index():
     if offset:
         tuple_value = tuple_value + (offset,)
         sql = sql + ' OFFSET ?'
+
+    print(sql)
 
     cur.execute(sql, tuple_value)
     rows = cur.fetchall()
@@ -212,9 +214,10 @@ def bookmarks_show(user_id):
 
     accepted_key = ['tag', 'count', 'offset']
 
+    # TODO: check to see if the offset can be started from 1
     tag = request.args.get('tag')
     count = request.args.get('count')
-    offset = request.args.get('offset')
+    offset = int(request.args.get('offset')) - 1
 
     try:
         for x in list(request.args):
@@ -270,6 +273,30 @@ def bookmarks_show(user_id):
         return response({'count': row_count, 'bookmarks': result}, ok_code)
     else:
         return response({}, )
+
+
+@app.route('/bookmarking/bookmarks/<user_id>/<bookmark_url>', methods=['GET'])
+def bookmarks_show_url(user_id, bookmark_url):
+    # TODO: show the bookmarks by the user_id and the bookmark_urls function
+    pass
+
+
+@app.route('/bookmarking/<user_id>/bookmarks', methods=['POST'])
+def bookmarks_create(user_id):
+    # TODO: create bookmarks by user_id function
+    pass
+
+
+@app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['PUT'])
+def bookmarks_update(user_id, bookmark_url):
+    # TODO: update bookmark by user_id and url function
+    pass
+
+
+@app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['DELETE'])
+def bookmarks_delete(user_id, bookmark_url):
+    # TODO: delete bookmark by user_id and url function
+    pass
 
 
 if __name__ == '__main__':

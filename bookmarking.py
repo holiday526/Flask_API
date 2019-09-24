@@ -10,6 +10,7 @@ ok_code, created_code, no_content_code, bad_request_code, not_found_code, intern
 msg_user_already_exists = 'User already exists'
 msg_malfunction_attri_exists = 'Malfunction key exists'
 msg_user_not_found = 'User not found'
+msg_bookmark_already_exists = "Bookmark already exists"
 
 db_file = 'bookmarks.db'
 
@@ -50,8 +51,6 @@ def internal_server_error(e):
 # show all users
 @app.route('/bookmarking/users', methods=['GET'])
 def users_index():
-    # response body
-    # All users(ID, name) in JSON(Sorted by ascending user ID(s))
     conn = create_connection(db_file)
 
     conn.row_factory = sqlite3.Row
@@ -66,38 +65,30 @@ def users_index():
 
     users_count = len(rows)
 
-    return response({'count': users_count, 'users': all_users}, created_code)
+    return response({'count': users_count, 'users': all_users}, ok_code)
 
 
 # create user
-@app.route('/bookmarking/<user_id>', methods=['POST'])
-def users_create(user_id):
-    # TODO: cross out the user_id
+@app.route('/bookmarking/', methods=['POST'])
+def users_create():
+    # TODO: change it to add multiple users
     if request.method == 'POST':
         try:
             # If more than two attr
             if len(request.get_json()) is not 2:
                 raise MalfunctionException
 
-            uid = request.json['user_id']
-
-            # If the user_id in URI does not match with the user_id in json
-            if str(uid) != str(user_id):
-                raise MalfunctionException
-
+            user_id = request.json['user_id']
             user_name = request.json['user_name']
 
         except MalfunctionException as err:
-            # malfunction key attr
-            # msg = [{'message': msg_user_already_exists}]
-            # return response({'reason': msg}, internal_server_error_code)
             return internal_server_error(internal_server_error_code)
 
         conn = create_connection(db_file)
         cur = conn.cursor()
 
         try:
-            cur.execute('INSERT INTO users VALUES (?, ?);', (uid, user_name))
+            cur.execute("INSERT INTO users VALUES (?, ?);", ("'" + user_id + "'", "'" + user_name + "'"))
         except sqlite3.IntegrityError:
             msg = [{'message': msg_user_already_exists}]
             return response({'reason': msg}, bad_request_code)
@@ -130,7 +121,6 @@ def users_delete(user_id):
 # bookmark index
 @app.route('/bookmarking/bookmarks', methods=['GET'])
 def bookmarks_index():
-    data_key = {}
     accepted_key = ['tags', 'count', 'offset']
 
     # TODO: check to see if the offset can be started from 1
@@ -272,19 +262,75 @@ def bookmarks_show(user_id):
     if row_count:
         return response({'count': row_count, 'bookmarks': result}, ok_code)
     else:
-        return response({}, )
+        msg = [{'message': msg_user_not_found}]
+        return response({'reason': msg}, not_found_code)
 
 
-@app.route('/bookmarking/bookmarks/<user_id>/<bookmark_url>', methods=['GET'])
+@app.route('/bookmarking/bookmarks/<user_id>/<path:bookmark_url>', methods=['GET'])
 def bookmarks_show_url(user_id, bookmark_url):
-    # TODO: show the bookmarks by the user_id and the bookmark_urls function
-    pass
+    conn = create_connection(db_file)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    tuple_value = ("'" + user_id + "'", "'" + bookmark_url + "'")
+
+    sql = "SELECT * FROM bookmarks" \
+          " WHERE user_id = ?" \
+          " AND url = ?"
+
+    cur.execute(sql, tuple_value)
+    rows = cur.fetchall()
+
+    result = []
+
+    for row in rows:
+        result.append(dict(row))
+
+    row_count = len(rows)
+
+    if row_count:
+        return response({'count': row_count, 'bookmarks': result}, ok_code)
+    else:
+        msg = [{'message': msg_user_not_found}]
+        return response({'reason': msg}, not_found_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks', methods=['POST'])
 def bookmarks_create(user_id):
     # TODO: create bookmarks by user_id function
-    pass
+    count = request.json['count']
+    bookmarks = request.json['bookmarks']
+
+    conn = create_connection(db_file)
+    cur = conn.cursor()
+
+    error_message = []
+
+    if count > 1:
+        for bookmark in bookmarks:
+            url = bookmark['url']
+            tags = bookmark['tags']
+            text = bookmark['text']
+
+            sql = "SELECT * FROM bookmarks" \
+                  " WHERE user_id = ?" \
+                  " AND url = ?"
+
+            cur.execute(sql, (user_id, url))
+
+            if cur.rowcount == 0:
+                # insert query
+                sql = "INSERT INTO bookmarks VALUES (?, ?, ?, ?);"
+                cur.execute(sql, (url, tags, text, user_id))
+            else:
+                error_message.append({"message", msg_bookmark_already_exists})
+
+    elif count == 0:
+        return internal_server_error(internal_server_error_code)
+    else:
+        return internal_server_error(internal_server_error_code)
+
+    return 'hello'
 
 
 @app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['PUT'])

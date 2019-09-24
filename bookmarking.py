@@ -37,10 +37,19 @@ def response(data, status_code):
 def create_connection(db_filename):
     conn = None
     try:
-        conn = sqlite3.connect(db_filename)
+        conn = sqlite3.connect(db_filename, timeout=1)
     except sqlite3.Error as e:
         print(e)
     return conn
+
+
+def check_key(accept_key, dictionary):
+    error_msg = {}
+    for temp in dictionary:
+        for key, value in dict(temp).items():
+            if key not in accept_key:
+                error_msg[key] = value
+    return error_msg
 
 
 @app.errorhandler(500)
@@ -69,34 +78,53 @@ def users_index():
 
 
 # create user
-@app.route('/bookmarking/', methods=['POST'])
+@app.route('/bookmarking', methods=['POST'])
 def users_create():
     # TODO: change it to add multiple users
     if request.method == 'POST':
+        accept_key = ['user_id', 'user_name']
         try:
-            # If more than two attr
-            if len(request.get_json()) is not 2:
+            if (len(request.get_json())) is not 2:
                 raise MalfunctionException
 
-            user_id = request.json['user_id']
-            user_name = request.json['user_name']
+            count = int(request.json['count'])
+
+            if count == 0:
+                raise MalfunctionException
+
+            users = request.json['users']
 
         except MalfunctionException as err:
             return internal_server_error(internal_server_error_code)
+        except Exception as err:
+            return internal_server_error(internal_server_error_code)
+
+        error_msg = None
 
         conn = create_connection(db_file)
         cur = conn.cursor()
 
-        try:
-            cur.execute("INSERT INTO users VALUES (?, ?);", ("'" + user_id + "'", "'" + user_name + "'"))
-        except sqlite3.IntegrityError:
-            msg = [{'message': msg_user_already_exists}]
-            return response({'reason': msg}, bad_request_code)
+        if check_key(accept_key, users):
+            return internal_server_error(internal_server_error_code)
+
+        if len(users) is not count:
+            return internal_server_error(internal_server_error_code)
+
+        for user in users:
+            try:
+                user_id = user[accept_key[0]]  # get the user_id
+                user_name = user[accept_key[1]]  # get the user_name
+                cur.execute("INSERT INTO users VALUES (?, ?);", (user_id, user_name))
+            except sqlite3.IntegrityError:
+                error_msg = [{'message': msg_user_already_exists}]
 
         conn.commit()
         conn.close()
 
-        return response({'status': created_code}, created_code)
+        if error_msg is None:
+            return response({'status': created_code}, created_code)
+        else:
+            return response({'reason': error_msg}, bad_request_code)
 
 
 # delete user

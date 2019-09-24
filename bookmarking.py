@@ -11,6 +11,7 @@ msg_user_already_exists = 'User already exists'
 msg_malfunction_attri_exists = 'Malfunction key exists'
 msg_user_not_found = 'User not found'
 msg_bookmark_already_exists = "Bookmark already exists"
+msg_bookmark_not_found = "Bookmark not found"
 
 db_file = 'bookmarks.db'
 
@@ -99,7 +100,7 @@ def users_create():
         except Exception as err:
             return internal_server_error(internal_server_error_code)
 
-        error_msg = None
+        error_msg = []
 
         conn = create_connection(db_file)
         cur = conn.cursor()
@@ -116,15 +117,15 @@ def users_create():
                 user_name = user[accept_key[1]]  # get the user_name
                 cur.execute("INSERT INTO users VALUES (?, ?);", (user_id, user_name))
             except sqlite3.IntegrityError:
-                error_msg = [{'message': msg_user_already_exists}]
+                error_msg.append({'message': msg_user_already_exists})
 
         conn.commit()
         conn.close()
 
-        if error_msg is None:
-            return response({'status': created_code}, created_code)
-        else:
+        if error_msg:
             return response({'reason': error_msg}, bad_request_code)
+        else:
+            return response({'status': created_code}, created_code)
 
 
 # delete user
@@ -173,7 +174,7 @@ def bookmarks_index():
     tuple_value = ()
 
     if tags:
-        tags = str(tags).split(",")
+        tags = [tag.strip() for tag in str(tags).split(",")]
         if len(tags) > 1:
             first = True
             for temp_tag in tags:
@@ -193,12 +194,11 @@ def bookmarks_index():
     if count:
         tuple_value = tuple_value + (count,)
         sql = sql + ' LIMIT ?'
-
-    if offset:
-        tuple_value = tuple_value + (offset,)
-        sql = sql + ' OFFSET ?'
-
-    print(sql)
+        if offset:
+            tuple_value = tuple_value + (offset,)
+            sql = sql + ' OFFSET ?'
+    elif offset:
+        return internal_server_error(internal_server_error_code)
 
     cur.execute(sql, tuple_value)
     rows = cur.fetchall()
@@ -217,7 +217,6 @@ def bookmarks_index():
 
 @app.route('/bookmarking/bookmarks/<user_id>', methods=['GET'])
 def bookmarks_show(user_id):
-    # TODO: check the user_id first, if there is no user_id return 404
     conn = create_connection(db_file)
     cur = conn.cursor()
 
@@ -230,12 +229,12 @@ def bookmarks_show(user_id):
         msg = [{'message': msg_user_not_found}]
         return response({'reason': msg}, not_found_code)
 
-    accepted_key = ['tag', 'count', 'offset']
+    accepted_key = ['tags', 'count', 'offset']
 
     # TODO: check to see if the offset can be started from 1
-    tag = request.args.get('tag')
+    tags = request.args.get('tags')
     count = request.args.get('count')
-    offset = int(request.args.get('offset')) - 1
+    offset = request.args.get('offset')
 
     try:
         for x in list(request.args):
@@ -253,13 +252,13 @@ def bookmarks_show(user_id):
 
     tuple_value = ()
 
-    tuple_value = tuple_value + ("'" + str(user_id) + "'",)
-    sql = sql + "WHERE user_id = ?"
+    tuple_value = tuple_value + (str(user_id),)
+    sql = sql + " WHERE user_id = ?"
 
-    if tag:
-        tags = str(tag).split(",")
+    if tags:
+        tags = [tag.strip() for tag in str(tags).split(",")]
         for x in tags:
-            tuple_value = tuple_value + ("%" + str(x) + "%",)
+            tuple_value = tuple_value + ("%" + str(x).strip() + "%",)
             sql = sql + "AND tags LIKE ?"
 
     sql = sql + " ORDER BY url ASC"
@@ -267,13 +266,11 @@ def bookmarks_show(user_id):
     if count:
         tuple_value = tuple_value + (count,)
         sql = sql + ' LIMIT ?'
-
-    if offset:
-        tuple_value = tuple_value + (offset,)
-        sql = sql + ' OFFSET ?'
-
-    if tag:
-        tuple_value = tuple_value + ("%" + str(tag) + "%",)
+        if offset:
+            tuple_value = tuple_value + (offset,)
+            sql = sql + ' OFFSET ?'
+    elif offset:
+        return internal_server_error(internal_server_error_code)
 
     cur.execute(sql, tuple_value)
     rows = cur.fetchall()
@@ -300,7 +297,7 @@ def bookmarks_show_url(user_id, bookmark_url):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    tuple_value = ("'" + user_id + "'", "'" + bookmark_url + "'")
+    tuple_value = (user_id, bookmark_url)
 
     sql = "SELECT * FROM bookmarks" \
           " WHERE user_id = ?" \
@@ -358,7 +355,8 @@ def bookmarks_create(user_id):
     else:
         return internal_server_error(internal_server_error_code)
 
-    return 'hello'
+    # testing
+    return response('', created_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['PUT'])
@@ -367,10 +365,30 @@ def bookmarks_update(user_id, bookmark_url):
     pass
 
 
-@app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['DELETE'])
+@app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>/', methods=['DELETE'])
 def bookmarks_delete(user_id, bookmark_url):
     # TODO: delete bookmark by user_id and url function
-    pass
+    error_msg = []
+
+    if request.args:
+        return internal_server_error
+
+    conn = create_connection(db_file)
+    cur = conn.cursor()
+
+    sql = "DELETE FROM bookmarks WHERE user_id = ? AND url = ?;"
+
+    cur.execute(sql, (user_id, bookmark_url))
+
+    conn.commit()
+    conn.close()
+
+    if cur.rowcount > 0:
+        return response('', no_content_code)
+    else:
+        error_msg.append({"message": msg_user_not_found})
+        error_msg.append({"message": msg_bookmark_not_found})
+        return response({"reason": error_msg}, not_found_code)
 
 
 if __name__ == '__main__':

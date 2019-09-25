@@ -81,7 +81,6 @@ def users_index():
 # create user
 @app.route('/bookmarking', methods=['POST'])
 def users_create():
-    # TODO: change it to add multiple users
     if request.method == 'POST':
         accept_key = ['user_id', 'user_name']
         try:
@@ -152,17 +151,18 @@ def users_delete(user_id):
 def bookmarks_index():
     accepted_key = ['tags', 'count', 'offset']
 
-    # TODO: check to see if the offset can be started from 1
     tags = request.args.get('tags')
     count = request.args.get('count')
     offset = request.args.get('offset')
+
+    if offset:
+        offset = int(offset) - 1
 
     try:
         for temp_key in list(request.args):
             if temp_key not in accepted_key:
                 raise MalfunctionException
     except MalfunctionException as err:
-        # return response({'status': bad_request_code}, bad_request_code)
         return internal_server_error(internal_server_error_code)
 
     conn = create_connection(db_file)
@@ -216,7 +216,7 @@ def bookmarks_index():
 
 
 @app.route('/bookmarking/bookmarks/<user_id>', methods=['GET'])
-def bookmarks_show(user_id):
+def bookmarks_show_user(user_id):
     conn = create_connection(db_file)
     cur = conn.cursor()
 
@@ -231,17 +231,18 @@ def bookmarks_show(user_id):
 
     accepted_key = ['tags', 'count', 'offset']
 
-    # TODO: check to see if the offset can be started from 1
     tags = request.args.get('tags')
     count = request.args.get('count')
     offset = request.args.get('offset')
+
+    if offset:
+        offset = int(offset) - 1
 
     try:
         for x in list(request.args):
             if x not in accepted_key:
                 raise MalfunctionException
     except MalfunctionException as err:
-        # return response({'status': bad_request_code}, bad_request_code)
         return internal_server_error(internal_server_error_code)
 
     conn = create_connection(db_file)
@@ -293,9 +294,20 @@ def bookmarks_show(user_id):
 
 @app.route('/bookmarking/bookmarks/<user_id>/<path:bookmark_url>', methods=['GET'])
 def bookmarks_show_url(user_id, bookmark_url):
+    error_msg = []
+
     conn = create_connection(db_file)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+
+    sql = "SELECT * FROM users WHERE user_id = ?"
+    cur.execute(sql, (user_id,))
+    rows = cur.fetchall()
+    conn.commit()
+
+    if len(rows) == 0:
+        error_msg.append({"message": msg_user_not_found})
+        return response({"reason": error_msg}, not_found_code)
 
     tuple_value = (user_id, bookmark_url)
 
@@ -316,13 +328,12 @@ def bookmarks_show_url(user_id, bookmark_url):
     if row_count:
         return response({'count': row_count, 'bookmarks': result}, ok_code)
     else:
-        msg = [{'message': msg_user_not_found}]
-        return response({'reason': msg}, not_found_code)
+        error_msg.append({"message": msg_bookmark_not_found})
+        return response({'reason': error_msg}, not_found_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks', methods=['POST'])
 def bookmarks_create(user_id):
-    # TODO: create bookmarks by user_id function
     error_message = []
 
     count = request.json['count']
@@ -331,59 +342,132 @@ def bookmarks_create(user_id):
     conn = create_connection(db_file)
     cur = conn.cursor()
 
-    sql = "SELECT * FROM users"
-
-    cur.execute(sql)
-
-    if cur.rowcount == 0:
-        error_message.append({"message": msg_user_already_exists})
-        return response({"reason": error_message}, not_found_code)
-
     if int(count) > 0:
-        print(bookmarks)
         for bookmark in bookmarks:
             url = bookmark['url']
-            tags = bookmark['tags']
-            text = bookmark['text']
-            uid = bookmark['user_id']
+            tags = str(bookmark['tags']).strip()
+            text = str(bookmark['text']).strip()
+            uid = str(bookmark['user_id']).strip()
 
-            sql = "SELECT * FROM bookmarks" \
-                  " WHERE user_id = ?" \
-                  " AND url = ?"
+            if str(uid) != user_id:
+                return internal_server_error(internal_server_error_code)
 
-            cur.execute(sql, (user_id, url))
-
+            sql = "SELECT * FROM users WHERE user_id = ?"
+            cur.execute(sql, (uid,))
             rows = cur.fetchall()
-            # print(rows)
 
-            if len(rows) == 0:
-                # insert query
-                sql = "INSERT INTO Bookmarks VALUES (?, ?, ?, ?);"
-                # print((url, tags, text, uid))
-                cur.execute(sql, (url, tags, text, uid))
+            if (len(rows)) == 0:
+                error_message.append({"message": msg_user_not_found})
+                return response({"reason": error_message}, not_found_code)
             else:
-                error_message.append({"message": msg_bookmark_already_exists})
-    elif count == 0:
+                sql = "SELECT * FROM bookmarks" \
+                      " WHERE user_id = ?" \
+                      " AND url = ?"
+
+                cur.execute(sql, (uid, url))
+
+                rows = cur.fetchall()
+
+                if len(rows) == 0:
+                    sql = "INSERT INTO Bookmarks VALUES (?, ?, ?, ?)"
+                    cur.execute(sql, (url, tags, text, uid))
+
+                    conn.commit()
+                else:
+                    error_message.append({"message": msg_bookmark_already_exists})
+    elif int(count) == 0:
+        conn.close()
         return internal_server_error(internal_server_error_code)
     else:
+        conn.close()
         return internal_server_error(internal_server_error_code)
 
-    # testing
+    conn.close()
+
     if error_message:
         return response({"reason": error_message}, bad_request_code)
     else:
         return response('', created_code)
 
 
-@app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['PUT'])
+@app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>', methods=['PUT'])
 def bookmarks_update(user_id, bookmark_url):
-    # TODO: update bookmark by user_id and url function
-    pass
+    error_message = []
+
+    count = request.json['count']
+    bookmarks = request.json['bookmarks']
+
+    conn = create_connection(db_file)
+    cur = conn.cursor()
+
+    accept_key = ['url', 'tags', 'text', 'user_id']
+
+    if check_key(accept_key, bookmarks):
+        return internal_server_error(internal_server_error_code)
+
+    if int(count) > 0:
+        for bookmark in bookmarks:
+            url = bookmark['url']
+            tags = str(bookmark['tags']).strip()
+            text = str(bookmark['text']).strip()
+            uid = str(bookmark['user_id']).strip()
+
+            if str(uid) != user_id:
+                return internal_server_error(internal_server_error_code)
+
+            sql = "SELECT * FROM users WHERE user_id = ?"
+            cur.execute(sql, (uid,))
+            user_exist = cur.fetchall()
+
+            if (len(user_exist)) == 0:
+                error_message.append({"message": msg_user_not_found})
+                error_message.append({"message": msg_bookmark_not_found})
+            else:
+                sql = "SELECT * FROM bookmarks" \
+                      " WHERE user_id = ?" \
+                      " AND url = ?"
+
+                cur.execute(sql, (uid, bookmark_url))
+
+                rows = cur.fetchall()
+
+                if len(rows) > 0:
+                    tuple_value = ()
+                    sql = "UPDATE bookmarks" \
+                          " SET url = ?"
+                    tuple_value = tuple_value + (url,)
+                    if tags:
+                        sql = sql + ", tags = ?"
+                        tuple_value = tuple_value + (tags,)
+                    if text:
+                        sql = sql + ", text = ?"
+                        tuple_value = tuple_value + (text,)
+                    sql = sql + " WHERE user_id = ?"
+                    sql = sql + " AND url = ?"
+                    tuple_value = tuple_value + (user_id, bookmark_url,)
+                    cur.execute(sql, tuple_value)
+
+                    conn.commit()
+                else:
+                    error_message.append({"message": msg_bookmark_not_found})
+
+    elif int(count) == 0:
+        conn.close()
+        return internal_server_error(internal_server_error_code)
+    else:
+        conn.close()
+        return internal_server_error(internal_server_error_code)
+
+    conn.close()
+
+    if not error_message:
+        return response("", created_code)
+    else:
+        return response({"reason": error_message}, not_found_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>', methods=['DELETE'])
 def bookmarks_delete(user_id, bookmark_url):
-    # TODO: delete bookmark by user_id and url function
     error_msg = []
 
     if request.args:
@@ -392,20 +476,28 @@ def bookmarks_delete(user_id, bookmark_url):
     conn = create_connection(db_file)
     cur = conn.cursor()
 
-    sql = "DELETE FROM bookmarks WHERE user_id = ? AND url = ?;"
-
-    cur.execute(sql, (user_id, bookmark_url))
-
+    sql = "SELECT * FROM bookmarks WHERE user_id = ?;"
+    cur.execute(sql, (user_id,))
+    user_exist = cur.fetchall()
     conn.commit()
-    conn.close()
 
-    if cur.rowcount > 0:
-        return response('', no_content_code)
+    if user_exist:
+        sql = "DELETE FROM bookmarks WHERE user_id = ? AND url = ?;"
+        cur.execute(sql, (user_id, bookmark_url))
+        conn.commit()
+        if cur.rowcount == 0:
+            error_msg.append({"message": msg_bookmark_not_found})
     else:
         error_msg.append({"message": msg_user_not_found})
         error_msg.append({"message": msg_bookmark_not_found})
+
+    conn.close()
+
+    if not error_msg:
+        return response('', no_content_code)
+    else:
         return response({"reason": error_msg}, not_found_code)
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

@@ -323,19 +323,29 @@ def bookmarks_show_url(user_id, bookmark_url):
 @app.route('/bookmarking/<user_id>/bookmarks', methods=['POST'])
 def bookmarks_create(user_id):
     # TODO: create bookmarks by user_id function
+    error_message = []
+
     count = request.json['count']
     bookmarks = request.json['bookmarks']
 
     conn = create_connection(db_file)
     cur = conn.cursor()
 
-    error_message = []
+    sql = "SELECT * FROM users"
 
-    if count > 1:
+    cur.execute(sql)
+
+    if cur.rowcount == 0:
+        error_message.append({"message": msg_user_already_exists})
+        return response({"reason": error_message}, not_found_code)
+
+    if int(count) > 0:
+        print(bookmarks)
         for bookmark in bookmarks:
             url = bookmark['url']
             tags = bookmark['tags']
             text = bookmark['text']
+            uid = bookmark['user_id']
 
             sql = "SELECT * FROM bookmarks" \
                   " WHERE user_id = ?" \
@@ -343,20 +353,26 @@ def bookmarks_create(user_id):
 
             cur.execute(sql, (user_id, url))
 
-            if cur.rowcount == 0:
-                # insert query
-                sql = "INSERT INTO bookmarks VALUES (?, ?, ?, ?);"
-                cur.execute(sql, (url, tags, text, user_id))
-            else:
-                error_message.append({"message", msg_bookmark_already_exists})
+            rows = cur.fetchall()
+            # print(rows)
 
+            if len(rows) == 0:
+                # insert query
+                sql = "INSERT INTO Bookmarks VALUES (?, ?, ?, ?);"
+                # print((url, tags, text, uid))
+                cur.execute(sql, (url, tags, text, uid))
+            else:
+                error_message.append({"message": msg_bookmark_already_exists})
     elif count == 0:
         return internal_server_error(internal_server_error_code)
     else:
         return internal_server_error(internal_server_error_code)
 
     # testing
-    return response('', created_code)
+    if error_message:
+        return response({"reason": error_message}, bad_request_code)
+    else:
+        return response('', created_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks/<bookmark_url>', methods=['PUT'])
@@ -365,7 +381,7 @@ def bookmarks_update(user_id, bookmark_url):
     pass
 
 
-@app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>/', methods=['DELETE'])
+@app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>', methods=['DELETE'])
 def bookmarks_delete(user_id, bookmark_url):
     # TODO: delete bookmark by user_id and url function
     error_msg = []

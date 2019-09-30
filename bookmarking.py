@@ -124,6 +124,7 @@ def users_create():
         if error_msg:
             return response({'reason': error_msg}, bad_request_code)
         else:
+            # TODO: change the response content
             return response({'status': created_code}, created_code)
 
 
@@ -139,6 +140,7 @@ def users_delete(user_id):
     conn.close()
 
     if cur.rowcount is 1:
+        # TODO: change the response content
         return response({'status': no_content_code}, no_content_code)
     elif cur.rowcount is 0:
         msg = [{'message': msg_user_not_found}]
@@ -387,6 +389,7 @@ def bookmarks_create(user_id):
     if error_message:
         return response({"reason": error_message}, bad_request_code)
     else:
+        # TODO: change the response content
         return response('', created_code)
 
 
@@ -461,6 +464,7 @@ def bookmarks_update(user_id, bookmark_url):
     conn.close()
 
     if not error_message:
+        # TODO: change the response content
         return response("", created_code)
     else:
         return response({"reason": error_message}, not_found_code)
@@ -494,6 +498,7 @@ def bookmarks_delete(user_id, bookmark_url):
     conn.close()
 
     if not error_msg:
+        # TODO: change the response content
         return response('', no_content_code)
     else:
         return response({"reason": error_msg}, not_found_code)

@@ -53,20 +53,12 @@ def check_key(accept_key, dictionary):
     return error_msg
 
 
-@app.errorhandler(500)
-def internal_server_error(e):
-    return "<h1>500</h1><p>Internal server error</p>", 500
-
-
-# show all users
-@app.route('/bookmarking/users', methods=['GET'])
-def users_index():
+def get_users():
     conn = create_connection(db_file)
-
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    cur.execute('SELECT * FROM users;')
+    cur.execute('SELECT * FROM users ORDER BY user_id;')
     rows = cur.fetchall()
 
     all_users = []
@@ -75,7 +67,40 @@ def users_index():
 
     users_count = len(rows)
 
-    return response({'count': users_count, 'users': all_users}, ok_code)
+    return {'count': users_count, 'users': all_users}
+
+
+def get_bookmarks(user_id=None):
+    conn = create_connection(db_file)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    sql = "SELECT * FROM bookmarks"
+
+    if user_id:
+        sql = sql + " WHERE user_id = ?"
+
+    cur.execute(sql, (user_id,))
+    rows = cur.fetchall()
+
+    conn.close()
+
+    result = []
+
+    for row in rows:
+        result.append(dict(row))
+
+    return {"count": len(rows), "bookmarks": result}
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return "<h1>500</h1><p>Internal server error</p>", 500
+
+
+# show all users
+@app.route('/bookmarking/users', methods=['GET'])
+def users_index():
+    return response(get_users(), ok_code)
 
 
 # create user
@@ -118,14 +143,15 @@ def users_create():
             except sqlite3.IntegrityError:
                 error_msg.append({'message': msg_user_already_exists})
 
-        conn.commit()
+        if not error_msg:
+            conn.commit()
+
         conn.close()
 
         if error_msg:
             return response({'reason': error_msg}, bad_request_code)
         else:
-            # TODO: change the response content
-            return response({'status': created_code}, created_code)
+            return response(get_users(), created_code)
 
 
 # delete user
@@ -136,14 +162,18 @@ def users_delete(user_id):
 
     cur.execute('DELETE FROM users WHERE user_id=?', (user_id,))
 
-    conn.commit()
-    conn.close()
-
     if cur.rowcount is 1:
-        # TODO: change the response content
-        return response({'status': no_content_code}, no_content_code)
+        # return response({'status': no_content_code}, no_content_code)
+        cur.execute('DELETE FROM bookmarks WHERE user_id = ?', (user_id,))
+
+        conn.commit()
+        conn.close()
+
+        return response(get_users(), no_content_code)
     elif cur.rowcount is 0:
         msg = [{'message': msg_user_not_found}]
+        conn.commit()
+        conn.close()
         return response({'reason': msg}, not_found_code)
 
 
@@ -389,8 +419,8 @@ def bookmarks_create(user_id):
     if error_message:
         return response({"reason": error_message}, bad_request_code)
     else:
-        # TODO: change the response content
-        return response('', created_code)
+        # return response('', created_code)
+        return response(get_bookmarks(user_id), created_code)
 
 
 @app.route('/bookmarking/<user_id>/bookmarks/<path:bookmark_url>', methods=['PUT'])
@@ -464,8 +494,8 @@ def bookmarks_update(user_id, bookmark_url):
     conn.close()
 
     if not error_message:
-        # TODO: change the response content
-        return response("", created_code)
+        # return response("", created_code)
+        return response(get_bookmarks(user_id), created_code)
     else:
         return response({"reason": error_message}, not_found_code)
 
@@ -493,12 +523,12 @@ def bookmarks_delete(user_id, bookmark_url):
             error_msg.append({"message": msg_bookmark_not_found})
     else:
         error_msg.append({"message": msg_user_not_found})
-        error_msg.append({"message": msg_bookmark_not_found})
+        # error_msg.append({"message": msg_bookmark_not_found})
 
     conn.close()
 
     if not error_msg:
-        # TODO: change the response content
+        # using no_content_code do not have any response body
         return response('', no_content_code)
     else:
         return response({"reason": error_msg}, not_found_code)
